@@ -80,6 +80,7 @@ class EnsembleLinearLayer(nn.Module):
 
 
 class EnsembleNetwork(nn.Module):
+    """probabilistic dynamics ensemble, predicts delta observation and reward"""
     def __init__(self, obs_dim: int, action_dim: int, hidden_dim: int, num_layers: int,
                  num_models: int, lr: float):
         super().__init__()
@@ -126,7 +127,7 @@ class EnsembleNetwork(nn.Module):
         return (target - mean).pow(2).mean(dim=(1, 2))
 
 
-class ModelEnv:
+class FakeEnv:
     """environment for trajectory sampling"""
     def __init__(self, model: EnsembleNetwork, obs_dim: int, num_particles: int):
         self.model = model
@@ -185,7 +186,7 @@ class PETSAgent:
             obs_dim, action_dim, args.hidden_dim, args.num_layers, args.num_models, args.lr,
         ).to(self.device)
         self.prev_solution = None  # last MPC plan, used to warm-start the CEM mean
-        self.model_env = ModelEnv(self.model, obs_dim, args.num_particles)
+        self.model_env = FakeEnv(self.model, obs_dim, args.num_particles)
 
     def model_train(self, buffer):
         s, a, r, s_, _ = [t.float().to(self.device) for t in buffer.sample_all()]
@@ -197,10 +198,9 @@ class PETSAgent:
 
         val_size = int(self.validation_ratio * s.shape[1])
         train_end = s.shape[1] - val_size
-        train = slice(0, train_end)
         val = slice(train_end, s.shape[1])
         if val_size == 0:
-            val = train
+            val = slice(0, train_end)
 
         best_val_loss = float("inf")
         best_state = None

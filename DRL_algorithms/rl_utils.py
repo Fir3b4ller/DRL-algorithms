@@ -16,6 +16,9 @@ class ReplayBuffer:
     def add(self, transition):
         self.buffer.append(transition)
 
+    def add_batch(self, transitions):
+        self.buffer.extend(zip(*[np.asarray(t) for t in transitions]))
+
     def sample(self, batch_size: int):
         batch = random.sample(self.buffer, batch_size)
         s, a, r, s_, done = map(np.stack, zip(*batch))

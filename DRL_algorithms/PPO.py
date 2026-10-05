@@ -23,19 +23,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num_envs", type=int, default=4)
     parser.add_argument("--num_steps", type=int, default=512)
     parser.add_argument("--seed", type=int, default=1)
-    parser.add_argument("--total_timesteps", type=int, default=1000000)
+    parser.add_argument("--total_timesteps", type=int, default=500000)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--gae_lambda", type=float, default=0.95)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--ent_coef", type=float, default=0.1)
     parser.add_argument("--vf_coef", type=float, default=0.5)
     parser.add_argument("--max_grad_norm", type=float, default=0.5)
-    parser.add_argument("--anneal_lr", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--anneal_lr", action=argparse.BooleanOptionalAction, default=True)
     # PPO specific
     parser.add_argument("--clip_eps", type=float, default=0.2)
     parser.add_argument("--vf_clip_eps", type=float, default=0.2)
     parser.add_argument("--update_epochs", type=int, default=4)
-    parser.add_argument("--minibatch_size", type=int, default=256)
+    parser.add_argument("--minibatch_size", type=int, default=128)
     return parser.parse_args()
 
 

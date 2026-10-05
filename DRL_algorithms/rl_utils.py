@@ -27,6 +27,9 @@ class ReplayBuffer:
             torch.as_tensor(done, dtype=torch.float32),
         )
 
+    def sample_all(self):
+        return self.sample(len(self.buffer))
+
 
 def linear_schedule(start: float, end: float, total_steps: int):
     slope = (end - start) / total_steps

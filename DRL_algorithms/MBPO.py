@@ -34,7 +34,7 @@ def parse_args():
     parser.add_argument("--total_timesteps", type=int, default=5000)
     parser.add_argument("--buffer_size", type=int, default=5000)
     parser.add_argument("--epoch_length", type=int, default=200)
-    parser.add_argument("--learning_starts", type=int, default=1000)
+    parser.add_argument("--learning_starts", type=int, default=500)
     # soft actor-critic
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--gamma", type=float, default=0.99)
@@ -44,7 +44,7 @@ def parse_args():
     parser.add_argument("--alpha", type=float, default=0.2)
     parser.add_argument("--auto_tune_alpha", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--num_sac_updates", type=int, default=20)
-    parser.add_argument("--policy_frequency", type=int, default=1)
+    parser.add_argument("--policy_frequency", type=int, default=2)
     parser.add_argument("--target_network_frequency", type=int, default=4)
     parser.add_argument("--real_ratio", type=float, default=0.05)
     # dynamics ensemble model
@@ -55,11 +55,11 @@ def parse_args():
     parser.add_argument("--model_lr", type=float, default=1e-3)
     parser.add_argument("--model_batch_size", type=int, default=256)
     parser.add_argument("--model_train_freq", type=int, default=200)
-    parser.add_argument("--model_train_epochs", type=int, default=5)
+    parser.add_argument("--model_train_epochs", type=int, default=0)
     parser.add_argument("--validation_ratio", type=float, default=0.2)
     parser.add_argument("--patience", type=int, default=5)
     # model rollouts
-    parser.add_argument("--real_model_rollouts_per_step", type=int, default=400)
+    parser.add_argument("--model_rollouts_per_environment_step", type=int, default=400)
     parser.add_argument("--model_buffer_size", type=int, default=80000)
     parser.add_argument("--rollout_min_length", type=int, default=1)
     parser.add_argument("--rollout_max_length", type=int, default=1)
@@ -223,7 +223,7 @@ class MBPOAgent:
         self.rollout_max_length = args.rollout_max_length
         self.rollout_schedule_start = args.rollout_schedule_start
         self.rollout_schedule_end = args.rollout_schedule_end
-        self.rollout_batch_size = args.real_model_rollouts_per_step * args.model_train_freq
+        self.rollout_batch_size = args.model_rollouts_per_environment_step * args.model_train_freq
         self.num_elite_models = args.num_elite_models
         self.validation_ratio = args.validation_ratio
         self.model_train_epochs = args.model_train_epochs
@@ -270,29 +270,37 @@ class MBPOAgent:
         s, a, r, s_, _ = [t.float().to(self.device) for t in buffer.sample_all()]
         target = torch.cat([s_ - s, r.unsqueeze(-1)], dim=-1)
 
-        s = s.unsqueeze(0).expand(self.model.num_models, -1, -1)
-        a = a.unsqueeze(0).expand(self.model.num_models, -1, -1)
-        target = target.unsqueeze(0).expand(self.model.num_models, -1, -1)
-
-        val_size = int(self.validation_ratio * s.shape[1])
-        train_end = s.shape[1] - val_size
-        val = slice(train_end, s.shape[1])
+        num_samples = s.shape[0]
+        val_size = int(self.validation_ratio * num_samples)
+        train_end = num_samples - val_size
+        val = slice(train_end, num_samples)
         if val_size == 0:
             val = slice(0, train_end)
+
+        # validation uses the same data for every member
+        s_val = s.unsqueeze(0).expand(self.model.num_models, -1, -1)
+        a_val = a.unsqueeze(0).expand(self.model.num_models, -1, -1)
+        target_val = target.unsqueeze(0).expand(self.model.num_models, -1, -1)
 
         best_val_loss = float("inf")
         best_state = None
         train_loss = 0.0
         epochs_no_improve = 0
-        for _ in range(self.model_train_epochs):
+        epoch = 0
+        # model_train_epochs=0 means stopping is decided by patience alone
+        while self.model_train_epochs == 0 or epoch < self.model_train_epochs:
+            epoch += 1
+            # shuffle the training data independently for every ensemble member
+            perm = torch.stack([torch.randperm(train_end, device=self.device) for _ in range(self.model.num_models)])
             total_loss = 0.0
             steps = 0
             for start in range(0, train_end, self.model_batch_size):
                 end = min(start + self.model_batch_size, train_end)
-                total_loss += self.model.update(s[:, start:end], a[:, start:end], target[:, start:end])
+                idx = perm[:, start:end]
+                total_loss += self.model.update(s[idx], a[idx], target[idx])
                 steps += 1
             train_loss = total_loss / steps
-            val_loss = self.model.mse_loss(s[:, val], a[:, val], target[:, val]).sum().item()
+            val_loss = self.model.mse_loss(s_val[:, val], a_val[:, val], target_val[:, val]).sum().item()
             improvement = float("inf") if best_state is None else (best_val_loss - val_loss) / best_val_loss
             if improvement > 0.01:
                 best_val_loss = val_loss
@@ -305,14 +313,14 @@ class MBPOAgent:
         self.model.load_state_dict(best_state)  # keep the best model selected by validation
 
         # pick the members used for model rollouts
-        val_losses = self.model.mse_loss(s[:, val], a[:, val], target[:, val])
+        val_losses = self.model.mse_loss(s_val[:, val], a_val[:, val], target_val[:, val])
         self.fake_env.elite_models = torch.topk(val_losses, self.num_elite_models, largest=False).indices
         return train_loss, best_val_loss
 
     @torch.no_grad()
     def model_rollout(self, real_buffer, model_buffer, rollout_length: int):
         """rollouts with the current policy, added to the model buffer"""
-        num_rollouts = min(self.rollout_batch_size, len(real_buffer))
+        num_rollouts = self.rollout_batch_size
         obs = real_buffer.sample(num_rollouts)[0].float().to(self.device)
         for _ in range(rollout_length):
             act = self.select_action(obs)
@@ -421,6 +429,7 @@ def train(args: argparse.Namespace):
 
     obs, _ = env.reset(seed=args.seed)
     global_step = 0
+    sac_step = 0
     start_time = time.time()
     last_log_step = 0
 
@@ -456,12 +465,13 @@ def train(args: argparse.Namespace):
 
         # optimize the policy on real + model data
         if global_step >= args.learning_starts:
-            update_actor = global_step % args.policy_frequency == 0
-            update_target = global_step % args.target_network_frequency == 0
             for _ in range(args.num_sac_updates):
+                update_actor = sac_step % args.policy_frequency == 0
+                update_target = sac_step % args.target_network_frequency == 0
                 critic_loss, actor_loss, mean_q, alpha_loss = agent.SAC_update(
                     real_buffer, model_buffer, update_actor, update_target
                 )
+                sac_step += 1
             if global_step % 100 == 0:
                 writer.add_scalar("loss/critic_loss", critic_loss, global_step)
                 writer.add_scalar("loss/q_value", mean_q, global_step)
@@ -470,11 +480,10 @@ def train(args: argparse.Namespace):
                 if alpha_loss is not None:
                     writer.add_scalar("loss/alpha_loss", alpha_loss.item(), global_step)
                     writer.add_scalar("charts/alpha", agent.log_alpha.exp().item(), global_step)
-                writer.add_scalar("charts/real_buffer_size", len(real_buffer), global_step)
-                writer.add_scalar("charts/model_buffer_size", len(model_buffer), global_step)
+
 
         # log steps per second
-        if global_step - last_log_step >= 2000:
+        if global_step - last_log_step >= 100:
             sps = global_step / (time.time() - start_time)
             writer.add_scalar("charts/sps", sps, global_step)
             print(f"SPS={int(sps)}")

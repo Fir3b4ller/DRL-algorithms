@@ -192,29 +192,37 @@ class PETSAgent:
         s, a, r, s_, _ = [t.float().to(self.device) for t in buffer.sample_all()]
         target = torch.cat([s_ - s, r.unsqueeze(-1)], dim=-1)
 
-        s = s.unsqueeze(0).expand(self.model.num_models, -1, -1)
-        a = a.unsqueeze(0).expand(self.model.num_models, -1, -1)
-        target = target.unsqueeze(0).expand(self.model.num_models, -1, -1)
-
-        val_size = int(self.validation_ratio * s.shape[1])
-        train_end = s.shape[1] - val_size
-        val = slice(train_end, s.shape[1])
+        num_samples = s.shape[0]
+        val_size = int(self.validation_ratio * num_samples)
+        train_end = num_samples - val_size
+        val = slice(train_end, num_samples)
         if val_size == 0:
             val = slice(0, train_end)
+
+        # validation uses the same data for every member
+        s_val = s.unsqueeze(0).expand(self.model.num_models, -1, -1)
+        a_val = a.unsqueeze(0).expand(self.model.num_models, -1, -1)
+        target_val = target.unsqueeze(0).expand(self.model.num_models, -1, -1)
 
         best_val_loss = float("inf")
         best_state = None
         train_loss = 0.0
         epochs_no_improve = 0
-        for _ in range(self.train_epochs):
+        epoch = 0
+        # train_epochs=0 means stopping is decided by patience alone
+        while self.train_epochs == 0 or epoch < self.train_epochs:
+            epoch += 1
+            # shuffle the training data independently for every ensemble member
+            perm = torch.stack([torch.randperm(train_end, device=self.device) for _ in range(self.model.num_models)])
             total_loss = 0.0
             steps = 0
             for start in range(0, train_end, self.batch_size):
                 end = min(start + self.batch_size, train_end)
-                total_loss += self.model.update(s[:, start:end], a[:, start:end], target[:, start:end])
+                idx = perm[:, start:end]
+                total_loss += self.model.update(s[idx], a[idx], target[idx])
                 steps += 1
             train_loss = total_loss / steps
-            val_loss = self.model.mse_loss(s[:, val], a[:, val], target[:, val]).sum().item()
+            val_loss = self.model.mse_loss(s_val[:, val], a_val[:, val], target_val[:, val]).sum().item()
             improvement = float("inf") if best_state is None else (best_val_loss - val_loss) / best_val_loss
             if improvement > 0.01:
                 best_val_loss = val_loss
@@ -227,12 +235,12 @@ class PETSAgent:
         self.model.load_state_dict(best_state)  # keep the best model selected by validation
 
         # pick the members for planning
-        val_losses = self.model.mse_loss(s[:, val], a[:, val], target[:, val])
+        val_losses = self.model.mse_loss(s_val[:, val], a_val[:, val], target_val[:, val])
         self.model_env.elite_models = torch.topk(val_losses, self.num_elite_models, largest=False).indices
         return train_loss, best_val_loss
 
     @torch.no_grad()
-    def select_action(self, obs: np.ndarray) -> np.ndarray:
+    def select_action(self, obs: np.ndarray):
         """model predictive control with cem"""
         obs_t = torch.as_tensor(np.asarray(obs), dtype=torch.float32, device=self.device)
         num_cem_elites = max(1, int(self.elite_ratio * self.population_size))

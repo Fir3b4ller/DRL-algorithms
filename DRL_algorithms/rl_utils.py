@@ -20,7 +20,10 @@ class ReplayBuffer:
         self.buffer.extend(zip(*[np.asarray(t) for t in transitions]))
 
     def sample(self, batch_size: int):
-        batch = random.sample(self.buffer, batch_size)
+        if batch_size > len(self.buffer):
+            batch = random.choices(self.buffer, k=batch_size)
+        else:
+            batch = random.sample(self.buffer, batch_size)
         s, a, r, s_, done = map(np.stack, zip(*batch))
         return (
             torch.as_tensor(s, dtype=torch.float32),

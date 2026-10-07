@@ -28,13 +28,13 @@ def make_env(env_id: str, gamma: float, normalize: bool):
 def parse_args():
     parser = argparse.ArgumentParser(description="MBPO")
     parser.add_argument("--exp_name", type=str, default="MBPO")
-    parser.add_argument("--env", type=str, default="Pendulum-v1")
+    parser.add_argument("--env", type=str, default="LunarLanderContinuous-v2")
     # Pendulum-v1, LunarLanderContinuous-v2, BipedalWalker-v3, Walker2d-v4, HalfCheetah-v4, Ant-v4, Swimmer-v4, Hopper-v4
     parser.add_argument("--seed", type=int, default=1)
-    parser.add_argument("--total_timesteps", type=int, default=5000)
-    parser.add_argument("--buffer_size", type=int, default=5000)
-    parser.add_argument("--epoch_length", type=int, default=200)
-    parser.add_argument("--learning_starts", type=int, default=500)
+    parser.add_argument("--total_timesteps", type=int, default=50000)
+    parser.add_argument("--buffer_size", type=int, default=50000)
+    parser.add_argument("--epoch_length", type=int, default=1000)
+    parser.add_argument("--learning_starts", type=int, default=2000)
     # soft actor-critic
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--gamma", type=float, default=0.99)
@@ -45,7 +45,7 @@ def parse_args():
     parser.add_argument("--auto_tune_alpha", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--num_sac_updates", type=int, default=20)
     parser.add_argument("--policy_frequency", type=int, default=2)
-    parser.add_argument("--target_network_frequency", type=int, default=4)
+    parser.add_argument("--target_network_frequency", type=int, default=2)
     parser.add_argument("--real_ratio", type=float, default=0.05)
     # dynamics ensemble model
     parser.add_argument("--num_models", type=int, default=5)
@@ -60,7 +60,7 @@ def parse_args():
     parser.add_argument("--patience", type=int, default=5)
     # model rollouts
     parser.add_argument("--model_rollouts_per_environment_step", type=int, default=400)
-    parser.add_argument("--model_buffer_size", type=int, default=80000)
+    parser.add_argument("--model_buffer_size", type=int, default=200000)
     parser.add_argument("--rollout_min_length", type=int, default=1)
     parser.add_argument("--rollout_max_length", type=int, default=1)
     parser.add_argument("--rollout_schedule_start", type=int, default=1)

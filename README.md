@@ -1,8 +1,10 @@
 # DRL-algorithms
 
-A collection of PyTorch implementations for classic deep reinforcement learning (DRL) algorithms, tailored for self-study and academic research.
+A collection of deep reinforcement learning (DRL) algorithms implemented from scratch in PyTorch, spanning value-based, policy-based, and model-based methods, for self-study.
 
 The project reimplements the core training loops by hand in PyTorch, without relying on RL library wrappers, drawing on the ideas from [动手学强化学习 (Easy Reinforcement Learning)](https://hrl.boyuai.com/) and [cleanrl](https://github.com/vwxyzjn/cleanrl). This makes it easy to understand and compare each algorithm.
+
+It covers model-free methods (value-based and policy-based) as well as model-based methods (PETS and MBPO), which learn a probabilistic dynamics ensemble and use it either for online planning or for generating synthetic rollouts that accelerate policy learning.
 
 ## Implemented Algorithms
 
@@ -20,6 +22,8 @@ The project reimplements the core training loops by hand in PyTorch, without rel
 | Policy-based | DDPG | Pendulum-v1 / LunarLanderContinuous-v2 |
 | Policy-based | TD3 | Pendulum-v1 / LunarLanderContinuous-v2 / Ant-v4 |
 | Policy-based | SAC | Pendulum-v1 / LunarLanderContinuous-v2 / Hopper-v4 |
+| Model-based | PETS | Pendulum-v1 |
+| Model-based | MBPO | Pendulum-v1 |
 
 ## Project Structure
 
@@ -38,7 +42,9 @@ DRL-algorithms/
 │   ├── PPO_continuous.py
 │   ├── DDPG.py
 │   ├── TD3.py
-│   └── SAC.py
+│   ├── SAC.py
+│   ├── PETS.py
+│   └── MBPO.py
 ├── exp_result/            # Experiment results (learning curves, PNG / SVG)
 ├── requirements.txt       # Dependencies
 └── README.md
@@ -70,7 +76,7 @@ python DRL_algorithms/PPO.py --env CartPole-v1
 python DRL_algorithms/SAC.py --env Pendulum-v1
 ```
 
-Common arguments: `--env`, `--seed`, `--total_timesteps`, `--lr`, `--gamma`, etc.
+Common arguments: `--env`, `--seed`, `--total_timesteps`, `--lr`, `--gamma`, etc. 
 
 Launch TensorBoard to view training curves:
 
